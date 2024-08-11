@@ -1,20 +1,19 @@
 import tkinter as tk
-from tkinter import simpledialog, messagebox, filedialog, colorchooser
-from tkinter import ttk
+from tkinter import simpledialog, messagebox, ttk, filedialog, colorchooser
 import json
 import os
 import csv
-from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
+import sqlite3
+from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
 class Flashcard:
-    def __init__(self, question, answer, category="General"):
+    def __init__(self, question, answer, category="General", review_date="Not set"):
         self.question = question
         self.answer = answer
         self.category = category
-        self.review_date = None
+        self.review_date = review_date
 
     def to_dict(self):
         return {
@@ -26,13 +25,7 @@ class Flashcard:
 
     @classmethod
     def from_dict(cls, data):
-        instance = cls(data['question'], data['answer'], data['category'])
-        instance.review_date = data.get('review_date')
-        return instance
-
-    def schedule_review(self, days):
-        self.review_date = (
-            datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
+        return cls(data['question'], data['answer'], data['category'], data['review_date'])
 
 
 class FlashcardApp:
@@ -45,13 +38,15 @@ class FlashcardApp:
             'bg_color': '#ffffff',
             'fg_color': '#000000',
             'card_color': '#f0f0f0',
-            'button_color': '#007bff'
+            'button_color': '#cccccc'
         }
+
         self.initialize_ui()
+        self.initialize_database()
 
     def initialize_ui(self):
-        self.frame = ttk.Frame(self.root, padding="10")
-        self.frame.pack(fill=tk.BOTH, expand=True)
+        self.frame = tk.Frame(self.root)
+        self.frame.pack(padx=10, pady=10)
 
         self.login_button = ttk.Button(
             self.frame, text="Login", command=self.login)
@@ -101,99 +96,88 @@ class FlashcardApp:
             self.frame, text="Export", command=self.export_flashcards, state='disabled')
         self.export_button.grid(row=4, column=1, padx=5, pady=5)
 
-        self.search_entry = ttk.Entry(self.frame)
-        self.search_entry.grid(row=4, column=2, padx=5,
-                               pady=5, sticky=tk.W+tk.E)
-
         self.search_button = ttk.Button(
             self.frame, text="Search", command=self.search_flashcards, state='disabled')
-        self.search_button.grid(row=4, column=3, padx=5, pady=5)
+        self.search_button.grid(row=4, column=2, padx=5, pady=5)
 
         self.theme_button = ttk.Button(
             self.frame, text="Customize Theme", command=self.customize_theme, state='disabled')
-        self.theme_button.grid(row=5, column=0, padx=5, pady=5)
+        self.theme_button.grid(row=4, column=3, padx=5, pady=5)
 
         self.progress_button = ttk.Button(
             self.frame, text="View Progress", command=self.view_progress, state='disabled')
         self.progress_button.grid(row=5, column=1, padx=5, pady=5)
 
-        self.profile_button = ttk.Button(
+        self.manage_profile_button = ttk.Button(
             self.frame, text="Manage Profile", command=self.manage_profile, state='disabled')
-        self.profile_button.grid(row=5, column=2, padx=5, pady=5)
+        self.manage_profile_button.grid(row=5, column=2, padx=5, pady=5)
 
-        self.flashcard_listbox = tk.Listbox(self.frame, width=50, height=15)
+        self.leaderboard_button = ttk.Button(
+            self.frame, text="Leaderboard", command=self.show_leaderboard, state='disabled')
+        self.leaderboard_button.grid(row=5, column=3, padx=5, pady=5)
+
+        self.export_stats_button = ttk.Button(
+            self.frame, text="Export Stats", command=self.export_stats_to_csv, state='disabled')
+        self.export_stats_button.grid(row=6, column=0, padx=5, pady=5)
+
+        self.flashcard_listbox = tk.Listbox(self.frame, width=60, height=15)
         self.flashcard_listbox.grid(
-            row=6, column=0, columnspan=4, padx=5, pady=5)
+            row=7, column=0, columnspan=4, padx=5, pady=5)
 
-        self.apply_theme()
-
-    def apply_theme(self):
-        self.frame.config(bg=self.theme['bg_color'])
-        style = ttk.Style()
-        style.configure('TButton', background=self.theme['button_color'])
-        for widget in self.frame.winfo_children():
-            if isinstance(widget, ttk.Button):
-                widget.config(style='TButton')
-            elif isinstance(widget, tk.Listbox):
-                widget.config(
-                    bg=self.theme['card_color'], fg=self.theme['fg_color'])
-            elif isinstance(widget, tk.Entry):
-                widget.config(
-                    bg=self.theme['card_color'], fg=self.theme['fg_color'])
-            elif isinstance(widget, tk.Label):
-                widget.config(bg=self.theme['bg_color'],
-                              fg=self.theme['fg_color'])
+    def initialize_database(self):
+        self.conn = sqlite3.connect('flashcards.db')
+        self.c = self.conn.cursor()
+        self.c.execute('''
+            CREATE TABLE IF NOT EXISTS leaderboard (
+                username TEXT PRIMARY KEY,
+                score INTEGER
+            )
+        ''')
+        self.c.execute('''
+            CREATE TABLE IF NOT EXISTS achievements (
+                username TEXT,
+                score INTEGER,
+                date TEXT,
+                FOREIGN KEY (username) REFERENCES leaderboard (username)
+            )
+        ''')
+        self.conn.commit()
 
     def login(self):
         username = simpledialog.askstring("Login", "Enter username:")
         if username:
             self.user = username
-            self.update_ui_for_user()
+            self.enable_buttons()
             messagebox.showinfo("Info", f"Welcome, {username}!")
 
-    def update_ui_for_user(self):
-        for widget in [self.add_button, self.view_button, self.quiz_button, self.save_button,
+    def enable_buttons(self):
+        for button in [self.add_button, self.view_button, self.quiz_button, self.save_button,
                        self.load_button, self.stats_button, self.filter_button, self.edit_button,
                        self.delete_button, self.import_button, self.export_button, self.search_button,
-                       self.theme_button, self.progress_button, self.profile_button]:
-            widget.config(state='normal')
-
-    def logout(self):
-        self.user = None
-        self.flashcards = []
-        self.flashcard_listbox.delete(0, tk.END)
-        self.reset_ui_for_logout()
-        messagebox.showinfo("Info", "Logged out successfully!")
-
-    def reset_ui_for_logout(self):
-        for widget in [self.add_button, self.view_button, self.quiz_button, self.save_button,
-                       self.load_button, self.stats_button, self.filter_button, self.edit_button,
-                       self.delete_button, self.import_button, self.export_button, self.search_button,
-                       self.theme_button, self.progress_button, self.profile_button]:
-            widget.config(state='disabled')
+                       self.theme_button, self.progress_button, self.manage_profile_button,
+                       self.leaderboard_button, self.export_stats_button]:
+            button.config(state='normal')
 
     def add_flashcard(self):
-        question = simpledialog.askstring("Question", "Enter the question:")
-        answer = simpledialog.askstring("Answer", "Enter the answer:")
+        question = simpledialog.askstring("Input", "Enter the question:")
+        answer = simpledialog.askstring("Input", "Enter the answer:")
         category = simpledialog.askstring(
-            "Category", "Enter the category (optional):") or "General"
+            "Input", "Enter the category (default 'General'):") or "General"
         if question and answer:
             flashcard = Flashcard(question, answer, category)
             self.flashcards.append(flashcard)
             self.flashcard_listbox.insert(
-                tk.END, f"{question} - {category}")
-            self.categories.add(category)
-
-            schedule_days = simpledialog.askinteger(
-                "Review", "Schedule review after how many days?", initialvalue=1)
-            if schedule_days:
-                flashcard.schedule_review(schedule_days)
+                tk.END, f"{flashcard.question} - {flashcard.category} (Review on: {flashcard.review_date})")
+            messagebox.showinfo("Info", "Flashcard added!")
 
     def view_flashcards(self):
-        self.flashcard_listbox.delete(0, tk.END)
-        for flashcard in self.flashcards:
-            self.flashcard_listbox.insert(
-                tk.END, f"{flashcard.question} - {flashcard.category} (Review on: {flashcard.review_date})")
+        if not self.flashcards:
+            messagebox.showinfo("Info", "No flashcards available.")
+        else:
+            self.flashcard_listbox.delete(0, tk.END)
+            for flashcard in self.flashcards:
+                self.flashcard_listbox.insert(
+                    tk.END, f"{flashcard.question} - {flashcard.category} (Review on: {flashcard.review_date})")
 
     def edit_flashcard(self):
         selected_index = self.flashcard_listbox.curselection()
@@ -203,7 +187,6 @@ class FlashcardApp:
 
         index = selected_index[0]
         flashcard = self.flashcards[index]
-
         new_question = simpledialog.askstring(
             "Edit", "Edit the question:", initialvalue=flashcard.question)
         new_answer = simpledialog.askstring(
@@ -232,25 +215,92 @@ class FlashcardApp:
         messagebox.showinfo("Info", "Flashcard deleted!")
 
     def search_flashcards(self):
-        search_term = self.search_entry.get().lower()
-        self.flashcard_listbox.delete(0, tk.END)
-        for flashcard in self.flashcards:
-            if (search_term in flashcard.question.lower() or
-                search_term in flashcard.answer.lower() or
-                    search_term in flashcard.category.lower()):
-                self.flashcard_listbox.insert(
-                    tk.END, f"{flashcard.question} - {flashcard.category} (Review on: {flashcard.review_date})")
-
-    def filter_flashcards(self):
-        categories = set(card.category for card in self.flashcards)
-        selected_category = simpledialog.askstring(
-            "Filter", f"Choose category ({', '.join(categories)}):")
-        if selected_category in categories:
-            self.flashcard_listbox.delete(0, tk.END)
-            for flashcard in self.flashcards:
-                if flashcard.category == selected_category:
+        search_term = simpledialog.askstring("Search", "Enter search term:")
+        if search_term:
+            results = [flashcard for flashcard in self.flashcards if search_term.lower(
+            ) in flashcard.question.lower()]
+            if results:
+                self.flashcard_listbox.delete(0, tk.END)
+                for flashcard in results:
                     self.flashcard_listbox.insert(
                         tk.END, f"{flashcard.question} - {flashcard.category} (Review on: {flashcard.review_date})")
+            else:
+                messagebox.showinfo("Info", "No flashcards found.")
+
+    def filter_flashcards(self):
+        category = simpledialog.askstring(
+            "Filter", "Enter category to filter by:")
+        if category:
+            results = [flashcard for flashcard in self.flashcards if flashcard.category.lower(
+            ) == category.lower()]
+            if results:
+                self.flashcard_listbox.delete(0, tk.END)
+                for flashcard in results:
+                    self.flashcard_listbox.insert(
+                        tk.END, f"{flashcard.question} - {flashcard.category} (Review on: {flashcard.review_date})")
+            else:
+                messagebox.showinfo(
+                    "Info", "No flashcards found for this category.")
+
+    def import_flashcards(self):
+        file_path = filedialog.askopenfilename(
+            filetypes=[("JSON files", "*.json")])
+        if file_path:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+                self.flashcards = [Flashcard.from_dict(item) for item in data]
+                self.view_flashcards()
+                messagebox.showinfo("Info", "Flashcards imported!")
+
+    def export_flashcards(self):
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if file_path:
+            with open(file_path, 'w') as f:
+                json.dump([card.to_dict() for card in self.flashcards], f)
+            messagebox.showinfo(
+                "Info", f"Flashcards exported to '{file_path}'")
+
+    def customize_theme(self):
+        color = colorchooser.askcolor(title="Choose Background Color")[1]
+        if color:
+            self.theme['bg_color'] = color
+            self.apply_theme()
+
+    def apply_theme(self):
+        self.frame.config(bg=self.theme['bg_color'])
+        self.flashcard_listbox.config(bg=self.theme['card_color'])
+        for button in [self.add_button, self.view_button, self.quiz_button, self.save_button,
+                       self.load_button, self.stats_button, self.filter_button, self.edit_button,
+                       self.delete_button, self.import_button, self.export_button, self.search_button,
+                       self.theme_button, self.progress_button, self.manage_profile_button,
+                       self.leaderboard_button, self.export_stats_button]:
+            button.config(bg=self.theme['button_color'],
+                          fg=self.theme['fg_color'])
+
+    def quiz_user(self):
+        if not self.flashcards:
+            messagebox.showinfo("Info", "No flashcards available for quiz.")
+            return
+
+        import random
+        random.shuffle(self.flashcards)
+        score = 0
+        total = len(self.flashcards)
+
+        for card in self.flashcards:
+            answer = simpledialog.askstring(
+                "Quiz", f"Question: {card.question}")
+            if answer and answer.strip().lower() == card.answer.strip().lower():
+                messagebox.showinfo("Quiz", "Correct!")
+                score += 1
+            else:
+                messagebox.showinfo(
+                    "Quiz", f"Incorrect! The correct answer was: {card.answer}")
+
+        messagebox.showinfo("Quiz Finished", f"Your score: {score}/{total}")
+
+        self.save_stats(score, total)
 
     def save_flashcards(self):
         filename = f'{self.user}_flashcards.json'
@@ -264,95 +314,14 @@ class FlashcardApp:
             with open(filename, 'r') as f:
                 data = json.load(f)
                 self.flashcards = [Flashcard.from_dict(item) for item in data]
-            self.view_flashcards()
             messagebox.showinfo("Info", f"Flashcards loaded from '{filename}'")
         else:
-            messagebox.showinfo("Error", "No saved flashcards found.")
-
-    def import_flashcards(self):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("JSON files", "*.json"), ("CSV files", "*.csv")])
-        if not file_path:
-            return
-
-        _, ext = os.path.splitext(file_path)
-        if ext == '.json':
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-                self.flashcards.extend(
-                    [Flashcard.from_dict(item) for item in data])
-        elif ext == '.csv':
-            with open(file_path, 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    self.flashcards.append(
-                        Flashcard(row['question'], row['answer'], row['category']))
-        self.view_flashcards()
-        messagebox.showinfo("Info", f"Flashcards imported from '{file_path}'")
-
-    def export_flashcards(self):
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            filetypes=[("JSON files", "*.json"), ("CSV files", "*.csv")])
-        if not file_path:
-            return
-
-        _, ext = os.path.splitext(file_path)
-        if ext == '.json':
-            with open(file_path, 'w') as f:
-                json.dump([card.to_dict() for card in self.flashcards], f)
-        elif ext == '.csv':
-            with open(file_path, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(['question', 'answer', 'category'])
-                for card in self.flashcards:
-                    writer.writerow(
-                        [card.question, card.answer, card.category])
-        messagebox.showinfo("Info", f"Flashcards exported to '{file_path}'")
-
-    def customize_theme(self):
-        bg_color = colorchooser.askcolor(title="Choose Background Color")[1]
-        fg_color = colorchooser.askcolor(title="Choose Text Color")[1]
-        card_color = colorchooser.askcolor(title="Choose Card Color")[1]
-        button_color = colorchooser.askcolor(title="Choose Button Color")[1]
-
-        if bg_color:
-            self.theme['bg_color'] = bg_color
-        if fg_color:
-            self.theme['fg_color'] = fg_color
-        if card_color:
-            self.theme['card_color'] = card_color
-        if button_color:
-            self.theme['button_color'] = button_color
-
-        self.apply_theme()
-        messagebox.showinfo("Theme", "Theme updated!")
-
-    def view_progress(self):
-        stats_file = f'{self.user}_stats.json'
-        if os.path.exists(stats_file):
-            with open(stats_file, 'r') as f:
-                stats = json.load(f)
-            dates = [datetime.strptime(entry['date'], '%Y-%m-%d')
-                     for entry in stats]
-            scores = [entry['score'] for entry in stats]
-
-            fig, ax = plt.subplots()
-            ax.plot(dates, scores, marker='o')
-            ax.set_xlabel('Date')
-            ax.set_ylabel('Score')
-            ax.set_title('Quiz Score Progress')
-
-            canvas = FigureCanvasTkAgg(fig, master=self.root)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=1)
-        else:
-            messagebox.showinfo("Error", "No progress data found.")
+            messagebox.showinfo(
+                "Error", f"No saved flashcards found for user '{self.user}'.")
 
     def save_stats(self, score, total):
         stats_file = f'{self.user}_stats.json'
-        stats = {'score': score, 'total': total,
-                 'date': datetime.now().strftime('%Y-%m-%d')}
+        stats = {'score': score, 'total': total}
         if os.path.exists(stats_file):
             with open(stats_file, 'r') as f:
                 existing_stats = json.load(f)
@@ -376,36 +345,56 @@ class FlashcardApp:
         else:
             messagebox.showinfo("Error", "No statistics found.")
 
+    def view_progress(self):
+        progress_window = tk.Toplevel(self.root)
+        progress_window.title("Progress")
+
+        self.c.execute(
+            'SELECT * FROM achievements WHERE username=?', (self.user,))
+        rows = self.c.fetchall()
+
+        progress_label = tk.Label(
+            progress_window, text=f"Achievements:\n{', '.join(f'{row[1]} on {row[2]}' for row in rows)}")
+        progress_label.pack(padx=10, pady=10)
+
     def manage_profile(self):
-        action = simpledialog.askstring(
-            "Manage Profile", "Enter 'view' to view profile or 'edit' to edit profile:")
-        if action.lower() == 'view':
-            self.view_profile()
-        elif action.lower() == 'edit':
-            self.edit_profile()
-        else:
-            messagebox.showinfo("Error", "Invalid action.")
+        profile_window = tk.Toplevel(self.root)
+        profile_window.title("Manage Profile")
 
-    def view_profile(self):
-        profile_file = f'{self.user}_profile.json'
-        if os.path.exists(profile_file):
-            with open(profile_file, 'r') as f:
-                profile = json.load(f)
-            messagebox.showinfo("Profile", json.dumps(profile, indent=4))
-        else:
-            messagebox.showinfo("Error", "No profile found.")
+        new_score = simpledialog.askinteger(
+            "Manage Profile", "Enter new score:")
+        if new_score is not None:
+            self.c.execute(
+                'INSERT OR REPLACE INTO leaderboard (username, score) VALUES (?, ?)', (self.user, new_score))
+            self.conn.commit()
+            messagebox.showinfo("Info", "Profile updated!")
 
-    def edit_profile(self):
-        profile_file = f'{self.user}_profile.json'
-        name = simpledialog.askstring("Edit Profile", "Enter your name:")
-        email = simpledialog.askstring("Edit Profile", "Enter your email:")
-        if name and email:
-            profile = {'name': name, 'email': email}
-            with open(profile_file, 'w') as f:
-                json.dump(profile, f)
-            messagebox.showinfo("Profile", "Profile updated successfully!")
-        else:
-            messagebox.showinfo("Error", "Invalid profile data.")
+    def show_leaderboard(self):
+        leaderboard_window = tk.Toplevel(self.root)
+        leaderboard_window.title("Leaderboard")
+
+        self.c.execute('SELECT * FROM leaderboard ORDER BY score DESC')
+        rows = self.c.fetchall()
+
+        leaderboard_text = "\n".join(f"{row[0]}: {row[1]}" for row in rows)
+        leaderboard_label = tk.Label(
+            leaderboard_window, text=f"Leaderboard:\n{leaderboard_text}")
+        leaderboard_label.pack(padx=10, pady=10)
+
+    def export_stats_to_csv(self):
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+        if file_path:
+            with open(file_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Username', 'Score', 'Date'])
+                self.c.execute(
+                    'SELECT * FROM achievements WHERE username=?', (self.user,))
+                rows = self.c.fetchall()
+                for row in rows:
+                    writer.writerow([self.user, row[1], row[2]])
+            messagebox.showinfo(
+                "Info", f"Statistics exported to '{file_path}'")
 
 
 if __name__ == "__main__":
