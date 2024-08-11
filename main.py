@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox, ttk
 import json
 import os
+import hashlib
 
 
 class Flashcard:
@@ -25,52 +26,142 @@ class Flashcard:
 class FlashcardApp:
     def __init__(self, root):
         self.flashcards = []
+        self.categories = set()
         self.root = root
         self.root.title("Flashcard App")
         self.user = None
 
-        self.frame = ttk.Frame(root)
-        self.frame.pack(padx=10, pady=10)
+        # Layout improvements
+        self.main_frame = ttk.Frame(root)
+        self.main_frame.pack(padx=10, pady=10)
+
+        self.login_frame = ttk.Frame(self.main_frame)
+        self.login_frame.grid(row=0, column=0, columnspan=3, pady=10)
+
+        self.button_frame = ttk.Frame(self.main_frame)
+        self.button_frame.grid(row=1, column=0, columnspan=3, pady=10)
+
+        self.listbox_frame = ttk.Frame(self.main_frame)
+        self.listbox_frame.grid(row=2, column=0, columnspan=3, pady=10)
 
         self.login_button = ttk.Button(
-            self.frame, text="Login", command=self.login)
+            self.login_frame, text="Login", command=self.login)
         self.login_button.grid(row=0, column=0, padx=5, pady=5)
 
+        self.register_button = ttk.Button(
+            self.login_frame, text="Register", command=self.register)
+        self.register_button.grid(row=0, column=1, padx=5, pady=5)
+
+        self.logout_button = ttk.Button(
+            self.login_frame, text="Logout", command=self.logout, state='disabled')
+        self.logout_button.grid(row=0, column=2, padx=5, pady=5)
+
         self.add_button = ttk.Button(
-            self.frame, text="Add Flashcard", command=self.add_flashcard, state='disabled')
+            self.button_frame, text="Add Flashcard", command=self.add_flashcard, state='disabled')
         self.add_button.grid(row=1, column=0, padx=5, pady=5)
 
         self.view_button = ttk.Button(
-            self.frame, text="View Flashcards", command=self.view_flashcards, state='disabled')
+            self.button_frame, text="View Flashcards", command=self.view_flashcards, state='disabled')
         self.view_button.grid(row=1, column=1, padx=5, pady=5)
 
         self.quiz_button = ttk.Button(
-            self.frame, text="Quiz", command=self.quiz_user, state='disabled')
+            self.button_frame, text="Quiz", command=self.quiz_user, state='disabled')
         self.quiz_button.grid(row=1, column=2, padx=5, pady=5)
 
         self.save_button = ttk.Button(
-            self.frame, text="Save", command=self.save_flashcards, state='disabled')
+            self.button_frame, text="Save", command=self.save_flashcards, state='disabled')
         self.save_button.grid(row=2, column=0, padx=5, pady=5)
 
         self.load_button = ttk.Button(
-            self.frame, text="Load", command=self.load_flashcards, state='disabled')
+            self.button_frame, text="Load", command=self.load_flashcards, state='disabled')
         self.load_button.grid(row=2, column=1, padx=5, pady=5)
 
         self.stats_button = ttk.Button(
-            self.frame, text="Statistics", command=self.show_stats, state='disabled')
+            self.button_frame, text="Statistics", command=self.show_stats, state='disabled')
         self.stats_button.grid(row=2, column=2, padx=5, pady=5)
+
+        self.filter_button = ttk.Button(
+            self.button_frame, text="Filter by Category", command=self.filter_flashcards, state='disabled')
+        self.filter_button.grid(row=3, column=1, padx=5, pady=5)
+
+        self.edit_button = ttk.Button(
+            self.button_frame, text="Edit Flashcard", command=self.edit_flashcard, state='disabled')
+        self.edit_button.grid(row=4, column=0, padx=5, pady=5)
+
+        self.delete_button = ttk.Button(
+            self.button_frame, text="Delete Flashcard", command=self.delete_flashcard, state='disabled')
+        self.delete_button.grid(row=4, column=1, padx=5, pady=5)
+
+        self.flashcard_listbox = tk.Listbox(
+            self.listbox_frame, width=50, height=10)
+        self.flashcard_listbox.grid(row=0, column=0, padx=5, pady=5)
+
+    def hash_password(self, password):
+        return hashlib.sha256(password.encode()).hexdigest()
+
+    def register(self):
+        username = simpledialog.askstring("Register", "Enter username:")
+        password = simpledialog.askstring(
+            "Register", "Enter password:", show='*')
+        if username and password:
+            hashed_password = self.hash_password(password)
+            users = self.load_users()
+            if username in users:
+                messagebox.showinfo("Error", "Username already exists!")
+            else:
+                users[username] = hashed_password
+                self.save_users(users)
+                messagebox.showinfo("Info", "Registration successful!")
 
     def login(self):
         username = simpledialog.askstring("Login", "Enter username:")
-        if username:
-            self.user = username
-            self.add_button.config(state='normal')
-            self.view_button.config(state='normal')
-            self.quiz_button.config(state='normal')
-            self.save_button.config(state='normal')
-            self.load_button.config(state='normal')
-            self.stats_button.config(state='normal')
-            messagebox.showinfo("Info", f"Welcome, {username}!")
+        password = simpledialog.askstring(
+            "Login", "Enter password:", show='*')
+        if username and password:
+            hashed_password = self.hash_password(password)
+            users = self.load_users()
+            if username in users and users[username] == hashed_password:
+                self.user = username
+                self.add_button.config(state='normal')
+                self.view_button.config(state='normal')
+                self.quiz_button.config(state='normal')
+                self.save_button.config(state='normal')
+                self.load_button.config(state='normal')
+                self.stats_button.config(state='normal')
+                self.filter_button.config(state='normal')
+                self.edit_button.config(state='normal')
+                self.delete_button.config(state='normal')
+                self.logout_button.config(state='normal')
+                messagebox.showinfo("Info", f"Welcome, {username}!")
+            else:
+                messagebox.showinfo("Error", "Invalid username or password!")
+
+    def logout(self):
+        self.user = None
+        self.flashcards.clear()
+        self.categories.clear()
+        self.flashcard_listbox.delete(0, tk.END)
+        self.add_button.config(state='disabled')
+        self.view_button.config(state='disabled')
+        self.quiz_button.config(state='disabled')
+        self.save_button.config(state='disabled')
+        self.load_button.config(state='disabled')
+        self.stats_button.config(state='disabled')
+        self.filter_button.config(state='disabled')
+        self.edit_button.config(state='disabled')
+        self.delete_button.config(state='disabled')
+        self.logout_button.config(state='disabled')
+        messagebox.showinfo("Info", "Logged out successfully!")
+
+    def load_users(self):
+        if os.path.exists("users.json"):
+            with open("users.json", "r") as f:
+                return json.load(f)
+        return {}
+
+    def save_users(self, users):
+        with open("users.json", "w") as f:
+            json.dump(users, f)
 
     def add_flashcard(self):
         question = simpledialog.askstring("Input", "Enter the question:")
@@ -78,7 +169,11 @@ class FlashcardApp:
         category = simpledialog.askstring(
             "Input", "Enter the category (default 'General'):") or "General"
         if question and answer:
-            self.flashcards.append(Flashcard(question, answer, category))
+            flashcard = Flashcard(question, answer, category)
+            self.flashcards.append(flashcard)
+            self.categories.add(category)
+            self.flashcard_listbox.insert(
+                tk.END, f"{question} - {category}")
             messagebox.showinfo("Info", "Flashcard added!")
 
     def view_flashcards(self):
@@ -89,6 +184,62 @@ class FlashcardApp:
             for i, card in enumerate(self.flashcards, 1):
                 text += f"Flashcard {i}:\nQuestion: {card.question}\nAnswer: {card.answer}\nCategory: {card.category}\n\n"
             messagebox.showinfo("Flashcards", text)
+
+    def filter_flashcards(self):
+        if not self.categories:
+            messagebox.showinfo("Info", "No categories available.")
+            return
+
+        category = simpledialog.askstring(
+            "Filter", "Enter category to filter:")
+        if category in self.categories:
+            filtered_cards = [
+                card for card in self.flashcards if card.category == category]
+            if filtered_cards:
+                text = ""
+                for i, card in enumerate(filtered_cards, 1):
+                    text += f"Flashcard {i}:\nQuestion: {card.question}\nAnswer: {card.answer}\nCategory: {card.category}\n\n"
+                messagebox.showinfo("Filtered Flashcards", text)
+            else:
+                messagebox.showinfo(
+                    "Info", f"No flashcards found in category '{category}'.")
+        else:
+            messagebox.showinfo("Info", f"Category '{category}' not found.")
+
+    def edit_flashcard(self):
+        selected_index = self.flashcard_listbox.curselection()
+        if not selected_index:
+            messagebox.showinfo("Info", "No flashcard selected.")
+            return
+
+        index = selected_index[0]
+        flashcard = self.flashcards[index]
+
+        new_question = simpledialog.askstring(
+            "Edit", "Edit the question:", initialvalue=flashcard.question)
+        new_answer = simpledialog.askstring(
+            "Edit", "Edit the answer:", initialvalue=flashcard.answer)
+        new_category = simpledialog.askstring(
+            "Edit", "Edit the category:", initialvalue=flashcard.category)
+
+        if new_question and new_answer and new_category:
+            self.flashcards[index] = Flashcard(
+                new_question, new_answer, new_category)
+            self.flashcard_listbox.delete(index)
+            self.flashcard_listbox.insert(
+                index, f"{new_question} - {new_category}")
+            messagebox.showinfo("Info", "Flashcard updated!")
+
+    def delete_flashcard(self):
+        selected_index = self.flashcard_listbox.curselection()
+        if not selected_index:
+            messagebox.showinfo("Info", "No flashcard selected.")
+            return
+
+        index = selected_index[0]
+        del self.flashcards[index]
+        self.flashcard_listbox.delete(index)
+        messagebox.showinfo("Info", "Flashcard deleted!")
 
     def quiz_user(self):
         if not self.flashcards:
@@ -126,6 +277,10 @@ class FlashcardApp:
             with open(filename, 'r') as f:
                 data = json.load(f)
                 self.flashcards = [Flashcard.from_dict(item) for item in data]
+            self.flashcard_listbox.delete(0, tk.END)
+            for card in self.flashcards:
+                self.flashcard_listbox.insert(
+                    tk.END, f"{card.question} - {card.category}")
             messagebox.showinfo("Info", f"Flashcards loaded from '{filename}'")
         else:
             messagebox.showinfo(
