@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import simpledialog, messagebox, ttk
+from tkinter import simpledialog, messagebox, ttk, filedialog
 import json
 import os
 import hashlib
@@ -36,13 +36,16 @@ class FlashcardApp:
         self.main_frame.pack(padx=10, pady=10)
 
         self.login_frame = ttk.Frame(self.main_frame)
-        self.login_frame.grid(row=0, column=0, columnspan=3, pady=10)
+        self.login_frame.grid(row=0, column=0, columnspan=4, pady=10)
 
         self.button_frame = ttk.Frame(self.main_frame)
-        self.button_frame.grid(row=1, column=0, columnspan=3, pady=10)
+        self.button_frame.grid(row=1, column=0, columnspan=4, pady=10)
 
         self.listbox_frame = ttk.Frame(self.main_frame)
-        self.listbox_frame.grid(row=2, column=0, columnspan=3, pady=10)
+        self.listbox_frame.grid(row=2, column=0, columnspan=4, pady=10)
+
+        self.search_frame = ttk.Frame(self.main_frame)
+        self.search_frame.grid(row=3, column=0, columnspan=4, pady=10)
 
         self.login_button = ttk.Button(
             self.login_frame, text="Login", command=self.login)
@@ -92,6 +95,22 @@ class FlashcardApp:
             self.button_frame, text="Delete Flashcard", command=self.delete_flashcard, state='disabled')
         self.delete_button.grid(row=4, column=1, padx=5, pady=5)
 
+        self.import_button = ttk.Button(
+            self.button_frame, text="Import Flashcards", command=self.import_flashcards, state='disabled')
+        self.import_button.grid(row=5, column=0, padx=5, pady=5)
+
+        self.export_button = ttk.Button(
+            self.button_frame, text="Export Flashcards", command=self.export_flashcards, state='disabled')
+        self.export_button.grid(row=5, column=1, padx=5, pady=5)
+
+        self.search_label = ttk.Label(self.search_frame, text="Search:")
+        self.search_label.grid(row=0, column=0, padx=5, pady=5)
+        self.search_entry = ttk.Entry(self.search_frame, width=30)
+        self.search_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.search_button = ttk.Button(
+            self.search_frame, text="Search", command=self.search_flashcards, state='disabled')
+        self.search_button.grid(row=0, column=2, padx=5, pady=5)
+
         self.flashcard_listbox = tk.Listbox(
             self.listbox_frame, width=50, height=10)
         self.flashcard_listbox.grid(row=0, column=0, padx=5, pady=5)
@@ -131,6 +150,9 @@ class FlashcardApp:
                 self.filter_button.config(state='normal')
                 self.edit_button.config(state='normal')
                 self.delete_button.config(state='normal')
+                self.import_button.config(state='normal')
+                self.export_button.config(state='normal')
+                self.search_button.config(state='normal')
                 self.logout_button.config(state='normal')
                 messagebox.showinfo("Info", f"Welcome, {username}!")
             else:
@@ -150,6 +172,9 @@ class FlashcardApp:
         self.filter_button.config(state='disabled')
         self.edit_button.config(state='disabled')
         self.delete_button.config(state='disabled')
+        self.import_button.config(state='disabled')
+        self.export_button.config(state='disabled')
+        self.search_button.config(state='disabled')
         self.logout_button.config(state='disabled')
         messagebox.showinfo("Info", "Logged out successfully!")
 
@@ -180,31 +205,10 @@ class FlashcardApp:
         if not self.flashcards:
             messagebox.showinfo("Info", "No flashcards available.")
         else:
-            text = ""
-            for i, card in enumerate(self.flashcards, 1):
-                text += f"Flashcard {i}:\nQuestion: {card.question}\nAnswer: {card.answer}\nCategory: {card.category}\n\n"
-            messagebox.showinfo("Flashcards", text)
-
-    def filter_flashcards(self):
-        if not self.categories:
-            messagebox.showinfo("Info", "No categories available.")
-            return
-
-        category = simpledialog.askstring(
-            "Filter", "Enter category to filter:")
-        if category in self.categories:
-            filtered_cards = [
-                card for card in self.flashcards if card.category == category]
-            if filtered_cards:
-                text = ""
-                for i, card in enumerate(filtered_cards, 1):
-                    text += f"Flashcard {i}:\nQuestion: {card.question}\nAnswer: {card.answer}\nCategory: {card.category}\n\n"
-                messagebox.showinfo("Filtered Flashcards", text)
-            else:
-                messagebox.showinfo(
-                    "Info", f"No flashcards found in category '{category}'.")
-        else:
-            messagebox.showinfo("Info", f"Category '{category}' not found.")
+            self.flashcard_listbox.delete(0, tk.END)
+            for flashcard in self.flashcards:
+                self.flashcard_listbox.insert(
+                    tk.END, f"{flashcard.question} - {flashcard.category}")
 
     def edit_flashcard(self):
         selected_index = self.flashcard_listbox.curselection()
@@ -311,6 +315,59 @@ class FlashcardApp:
                 "Statistics", f"Total Quizzes: {total_quizzes}\nAverage Score: {average_score:.2f}")
         else:
             messagebox.showinfo("Error", "No statistics found.")
+
+    def filter_flashcards(self):
+        category = simpledialog.askstring(
+            "Filter", "Enter category to filter:")
+        if category:
+            filtered_flashcards = [
+                card for card in self.flashcards if card.category == category]
+            if filtered_flashcards:
+                self.flashcard_listbox.delete(0, tk.END)
+                for card in filtered_flashcards:
+                    self.flashcard_listbox.insert(
+                        tk.END, f"{card.question} - {card.category}")
+            else:
+                messagebox.showinfo(
+                    "Info", "No flashcards found for that category.")
+
+    def import_flashcards(self):
+        file_path = filedialog.askopenfilename(
+            title="Select file", filetypes=[("JSON files", "*.json")])
+        if file_path:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+                imported_flashcards = [
+                    Flashcard.from_dict(item) for item in data]
+                self.flashcards.extend(imported_flashcards)
+                self.flashcard_listbox.delete(0, tk.END)
+                for card in self.flashcards:
+                    self.flashcard_listbox.insert(
+                        tk.END, f"{card.question} - {card.category}")
+                messagebox.showinfo(
+                    "Info", "Flashcards imported successfully!")
+
+    def export_flashcards(self):
+        file_path = filedialog.asksaveasfilename(
+            title="Save file", defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if file_path:
+            with open(file_path, 'w') as f:
+                json.dump([card.to_dict() for card in self.flashcards], f)
+            messagebox.showinfo("Info", "Flashcards exported successfully!")
+
+    def search_flashcards(self):
+        query = self.search_entry.get().strip().lower()
+        if query:
+            matching_flashcards = [card for card in self.flashcards if query in card.question.lower(
+            ) or query in card.category.lower()]
+            if matching_flashcards:
+                self.flashcard_listbox.delete(0, tk.END)
+                for card in matching_flashcards:
+                    self.flashcard_listbox.insert(
+                        tk.END, f"{card.question} - {card.category}")
+            else:
+                messagebox.showinfo(
+                    "Info", "No flashcards found matching the search query.")
 
 
 if __name__ == "__main__":
